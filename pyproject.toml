@@ -1,2 +1,5 @@
 [tool.poetry.dependencies]
-python = "^3.11"  # чітко вказуємо 3.11
+python = "^3.11"
+aiogram = "2.25.1"
+aiohttp = ">=3.9.0"
+python-dotenv = "^1.0.0"
