@@ -1,4 +1,4 @@
 aiogram==3.0.0b7
-python-dotenv
-aiohttp
-redis
+aiohttp==3.9.0  # Версія з підтримкою Python 3.13
+python-dotenv>=1.0.0
+redis>=4.5.5
