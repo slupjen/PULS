@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: your-service-name
+    name: puls-bot
     runtime: python
-    pythonVersion: "3.11.8"
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
+    pythonVersion: "3.11.8"  # чітко фіксуємо версію
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py

@@ -1,2 +1,2 @@
-aiohttp<3.9.0,>=3.8.0
+aiohttp>=3.9.0  # нова версія, що підтримує Python 3.11
 python-dotenv
