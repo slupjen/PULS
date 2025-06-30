@@ -4,13 +4,14 @@ import asyncio
 import logging
 import time
 import random
+import signal
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 )
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
@@ -19,6 +20,8 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.methods import GetChatMember
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 from dotenv import load_dotenv
 
 # Завантаження змінних середовища
@@ -35,6 +38,15 @@ API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_ID = int(os.getenv('ADMIN_ID', 8154128217))
 CHANNEL_ID = os.getenv('CHANNEL_ID', "@pulsedelivery")
 GEOCODING_API_KEY = os.getenv('GEOCODING_API_KEY')
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# Налаштування вебхуку для Render.com
+WEB_SERVER_HOST = os.getenv('WEB_SERVER_HOST', '0.0.0.0')
+WEB_SERVER_PORT = int(os.getenv('PORT', 8000))
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
+BASE_WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
 BLACKLIST = []
 RATE_LIMIT = 10
 RATE_PERIOD = 60
@@ -54,6 +66,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== ІНІЦІАЛІЗАЦІЯ ====================
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+storage = RedisStorage.from_url(REDIS_URL)  # Використовуємо Redis для зберігання стану
+dp = Dispatcher(storage=storage)
+
 # ==================== СТАНИ ФОРМИ ====================
 class OrderForm(StatesGroup):
     captcha = State()
@@ -71,11 +88,6 @@ class OrderForm(StatesGroup):
     change_from = State()
     promo_code = State()
     review = State()
-
-# ==================== ІНІЦІАЛІЗАЦІЯ ====================
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
 
 # ==================== СИСТЕМА ЗАХИСТУ ====================
 class ProtectionMiddleware(BaseMiddleware):
@@ -1097,18 +1109,80 @@ async def on_shutdown(bot: Bot):
     await bot.session.close()
 
 # ==================== ЗАПУСК БОТА ====================
+async def on_startup(bot: Bot):
+    logger.info("Бот успішно запущений")
+    
+    # Встановлюємо вебхук на Render.com
+    if BASE_WEBHOOK_URL:
+        webhook_url = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=WEBHOOK_SECRET,
+            drop_pending_updates=True
+        )
+        logger.info(f"Webhook установлено на {webhook_url}")
+    
+    await bot.send_message(chat_id=ADMIN_ID, text="🟢 Бот запущений")
+
+async def on_shutdown(bot: Bot):
+    logger.info("Бот зупиняється...")
+    
+    if BASE_WEBHOOK_URL:
+        await bot.delete_webhook()
+    
+    await bot.send_message(chat_id=ADMIN_ID, text="🔴 Бот зупиняється")
+    await bot.session.close()
+
+async def handle_shutdown(signal, loop):
+    logger.info("Отримано сигнал завершення...")
+    await on_shutdown(bot)
+    loop.stop()
+
 async def main():
+    # Додаємо middleware
+    dp.message.middleware(ProtectionMiddleware())
+    
+    # Реєструємо обробники подій
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
-    dp.message.middleware(ProtectionMiddleware())
-
-    try:
+    
+    # Налаштовуємо сервер для вебхуків
+    if BASE_WEBHOOK_URL:
+        app = web.Application()
+        webhook_requests_handler = SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+            secret_token=WEBHOOK_SECRET,
+        )
+        webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+        setup_application(app, dp, bot=bot)
+        
+        # Налаштовуємо обробку сигналів для коректного завершення
+        loop = asyncio.get_event_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(
+                sig, lambda: asyncio.create_task(handle_shutdown(sig, loop))
+            )
+        
+        # Запускаємо сервер
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host=WEB_SERVER_HOST, port=WEB_SERVER_PORT)
+        await site.start()
+        
+        logger.info(f"Сервер запущено на {WEB_SERVER_HOST}:{WEB_SERVER_PORT}")
+        logger.info(f"Вебхук доступний за адресою: {BASE_WEBHOOK_URL}{WEBHOOK_PATH}")
+        
+        # Запускаємо бота у вічному циклі
+        await asyncio.Event().wait()
+    else:
+        # Локальний режим з polling (для розробки)
+        logger.info("Запуск в режимі polling...")
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await bot.session.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот зупинено")
