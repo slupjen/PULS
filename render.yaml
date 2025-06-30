@@ -1,9 +1,7 @@
 services:
   - type: web
-    name: your-bot
+    name: puls-bot
     runtime: python
     pythonVersion: "3.11.8"
-    buildCommand: |
-      pip install --upgrade pip
-      pip install --only-binary :all: -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: python bot.py

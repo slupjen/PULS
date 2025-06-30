@@ -1,6 +1,9 @@
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery  # Додаткові типи за потреби
+from aiogram.utils.keyboard import InlineKeyboardBuilder 
 from aiogram.types import Message
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
