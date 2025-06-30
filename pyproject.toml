@@ -1,2 +1,9 @@
-[tool.poetry.dependencies]
-python = "3.11.*"
+[project]
+name = "puls"
+version = "0.1.0"
+description = "Puls Delivery Bot"
+requires-python = "==3.11.*"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
