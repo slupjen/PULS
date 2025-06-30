@@ -1,5 +1,2 @@
-[project]
-name = "puls"
-version = "0.1.0"
-description = "Puls Delivery Bot"
-requires-python = ">=3.11,<3.12"
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
